@@ -1,0 +1,561 @@
+---
+title: "DEA & GSEA on EwS cell lines DOX+ vs DOX- (Figure 2)"
+output: html_document
+date: "2024-08-21"
+---
+
+```{r setup, include=FALSE}
+library(DESeq2)
+library(apeglm)
+library(ggplot2)
+library(BiocGenerics)
+library(RColorBrewer)
+library(pheatmap)
+library(ComplexHeatmap)
+library(ggpubr)
+library(dplyr)
+library(tibble)
+library(tidyverse)
+library(magrittr)
+library(enrichplot)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+```
+
+```{r, load in data}
+# use "col&countData.Rmd" to load in countData & colData of RNA or Ribo-seq data
+pathtodir <- "EwS.Rdata"
+load(pathtodir)
+gene_info <- gtf_gene_df[,c(10:12, 21)]
+```
+
+```{r, DESeq on RNA-seq data}
+# perform DESeq on RNA-seq data
+  # use countmatrix
+dds_RNA <- DESeqDataSetFromMatrix(countData = count_A673_all, colData = coldata_A673_all, design = ~ conditions)
+    # drop levels if needed (choose reference level if > 2 conditions are included)
+dds_RNA$conditions <- relevel(dds_RNA$conditions, ref = "EFDOXneg")
+
+# use txi
+  # use of multiple cell lines:
+dds_RNA <- DESeqDataSetFromTximport(txi = txi_all_sh, colData = coldata_all_sh, design = ~ cell_line + conditions)
+
+  # use of one cell line:
+dds_RNA <- DESeqDataSetFromTximport(txi = txi_SKNMC, colData = coldata_SKNMC, design = ~ conditions)
+dds_RNA <- DESeqDataSetFromTximport(txi = txi_MHHES1, colData = coldata_MHHES1, design = ~ conditions)
+dds_RNA <- DESeqDataSetFromTximport(txi = txi_TC106, colData = coldata_TC106, design = ~ conditions)
+dds_RNA <- DESeqDataSetFromTximport(txi = txi_RDES, colData = coldata_RDES, design = ~ conditions)
+dds_RNA <- DESeqDataSetFromTximport(txi = txi_A673, colData = coldata_A673, design = ~ conditions)
+
+# filtering (use smallest group size)
+smallestgroupsize <- 3
+dds_RNA <- dds_RNA[rowSums(counts(dds_RNA) >= 10) >= smallestgroupsize,]
+
+# perform DESeq 
+dds_RNA <- DESeq(dds_RNA)
+
+# perform lfc shrinkage 
+res_RNA <- lfcShrink(dds_RNA, coef = "conditions_DOXpos_vs_DOXneg", type = "apeglm")
+```
+
+```{r, results RNA-seq}
+# create results df with gene info
+
+  # all cell lines together
+res_RNA <- as.data.frame(res_RNA) %>% 
+  rownames_to_column("gene_id") %>% 
+  left_join(gene_info, "gene_id") %>%
+  mutate(class = ifelse(is.na(class), "unannotated", class)) %>%
+  column_to_rownames("gene_id")
+
+  # per cell line
+res_RNA_SKNMC <- as.data.frame(res_RNA) %>% 
+  rownames_to_column("gene_id") %>% 
+  left_join(gene_info, "gene_id") %>%
+  mutate(cell_line = "SK-N-MC",
+         class = ifelse(is.na(class), "unannotated", class)) %>%
+  column_to_rownames("gene_id")
+
+res_RNA_MHH <- as.data.frame(res_RNA) %>% 
+  rownames_to_column("gene_id") %>% 
+  left_join(gene_info, by = "gene_id") %>%
+  mutate(cell_line = "MHH-ES1",
+         class = ifelse(is.na(class), "unannotated", class)) %>%
+  column_to_rownames("gene_id")
+
+res_RNA_TC <- as.data.frame(res_RNA) %>% 
+  rownames_to_column("gene_id") %>% 
+  left_join(gene_info, "gene_id") %>%
+  mutate(cell_line = "TC106",
+         class = ifelse(is.na(class), "unannotated", class)) %>%
+  column_to_rownames("gene_id")
+
+res_RNA_RDES <- as.data.frame(res_RNA) %>% 
+  rownames_to_column("gene_id") %>% 
+  left_join(gene_info, "gene_id") %>%
+  mutate(cell_line = "RD-ES",
+         class = ifelse(is.na(class), "unannotated", class)) %>%
+  column_to_rownames("gene_id")
+
+res_RNA_A673 <- as.data.frame(res_RNA) %>% 
+    rownames_to_column("gene_id") %>% 
+    left_join(gene_info, "gene_id") %>%
+  mutate(cell_line = "A673",
+         class = ifelse(is.na(class), "unannotated", class)) %>%
+  column_to_rownames("gene_id")
+
+# combine results dfs
+res_RNA_all <- rbind(res_RNA_A673, res_RNA_SKNMC, res_RNA_MHH, res_RNA_TC, res_RNA_RDES)
+```
+
+```{r, DESeq on Ribo-seq data}
+# perform DESeq on Ribo-seq data
+  # fill in countData & colData 
+    # use of multiple cell lines
+dds_ribo <- DESeqDataSetFromMatrix(countData = merged_psites_all_sh, colData = coldata_all_shRibo, design = ~ conditions+cell_line)
+
+    # use of one cell line
+dds_ribo <- DESeqDataSetFromMatrix(countData = merged_psites_A, colData = coldata_ARibo, design = ~ conditions)
+
+# perform DESeq
+dds_ribo <- DESeq(dds_ribo)
+
+# perform lfc shrinkage
+res_ribo <- lfcShrink(dds_ribo, coef = "conditions_DOXpos_vs_DOXneg", type = "apeglm")
+```
+
+```{r, MA plot}
+# check distribution 
+plotMA(res_ribo, ylim=c(-2,2))
+plotMA(res_RNA, ylim=c(-2,2))
+```
+
+```{r, results Ribo-seq}
+# creating results dfs of merged p-sites, use corresponding cell lines
+  # all cell lines together
+res_ribo <- as.data.frame(res_ribo) %>%
+  rownames_to_column("gene_id") %>%
+  left_join(gtf_gene_df, "gene_id") %>%
+  mutate(class = ifelse(is.na(class), "unannotated", class)) %>%
+  column_to_rownames("gene_id")
+
+  # per cell line
+res_ribo_SKNMC <- as.data.frame(res_ribo) %>%
+  rownames_to_column("gene_id") %>%
+  left_join(gtf_gene_df, "gene_id") %>%
+  mutate(cell_line = "SK-N-MC",
+        class = ifelse(is.na(class), "unannotated", class)) %>%
+  column_to_rownames("gene_id")
+  
+res_ribo_MHH <- as.data.frame(res_ribo) %>%
+  rownames_to_column("gene_id") %>%
+  left_join(gtf_gene_df, "gene_id") %>%
+  mutate(cell_line = "MHH-ES1",
+        class = ifelse(is.na(class), "unannotated", class)) %>%
+  column_to_rownames("gene_id")
+
+res_ribo_TC <- as.data.frame(res_ribo) %>%
+  rownames_to_column("gene_id") %>%
+  left_join(gtf_gene_df, "gene_id") %>%
+  mutate(cell_line = "TC106",
+        class = ifelse(is.na(class), "unannotated", class)) %>%
+  column_to_rownames("gene_id")
+
+res_ribo_RD <- as.data.frame(res_ribo) %>%
+  rownames_to_column("gene_id") %>%
+  left_join(gtf_gene_df, "gene_id") %>%
+  mutate(cell_line = "RD-ES",
+        class = ifelse(is.na(class), "unannotated", class)) %>%
+  column_to_rownames("gene_id")
+
+res_ribo_A <- as.data.frame(res_ribo) %>%
+  rownames_to_column("gene_id") %>%
+  left_join(gtf_gene_df, "gene_id") %>%
+  mutate(cell_line = "A673",
+        class = ifelse(is.na(class), "unannotated", class)) %>%
+  column_to_rownames("gene_id")
+
+# create results df of merged p-sites 
+res_merged_ribo_all <- rbind(res_ribo_A, res_ribo_SKNMC, res_ribo_MHH, res_ribo_TC, res_ribo_RD)
+
+# creating results df of ORF p-sites per cell line by using "orf_id" instead of "gene_id".
+res_ribo_ <- as.data.frame(res_ribo) %>% # add in cell line
+  rownames_to_column("orf_id") %>%
+  left_join(psite_to_gene, "orf_id") %>%
+  mutate(cell_line = "", # add in cell line
+         class= ifelse(is.na(class), "unannotated", class)) %>% 
+  column_to_rownames("orf_id")
+
+# create results df of ORFs of all cell lines, including gene_id's
+res_orfs_ribo_all <- rbind(res_ribo_A, res_ribo_SKNMC, res_ribo_MHH, res_ribo_TC, res_ribo_RD)
+```
+
+```{r PCA plot}
+# make PCA
+vsd <- vst(dds_ribo, blind = FALSE)
+vsd <- vst(dds_RNA, blind = FALSE)
+
+# all cell lines:
+pcaData <- plotPCA(vsd, intgroup=c( "cell_line", "conditions"), returnData=TRUE)
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+
+# plot PCA
+PCA.all <-ggplot(pcaData, aes(PC1, PC2, color = cell_line, shape = conditions)) +
+  geom_point(size=3) +
+  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
+  coord_fixed() +
+  theme_bw() +
+  labs(color = "cell lines", shape = "condition") +
+  scale_color_manual(values = c("#56B4E9", "purple", "orange",  "darkred", "darkgreen")) +
+  theme(
+    axis.title = element_text(size = 14),
+    legend.text = element_text(size = 13),
+    legend.title = element_text(size = 14, face = "bold"))
+
+# per cell line:
+pcaData <- plotPCA(vsd, intgroup=c("conditions"), returnData=TRUE)
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+
+# plot PCA
+PCA.cell_line <-ggplot(pcaData, aes(PC1, PC2, color = conditions)) +
+  geom_point(size=3) +
+  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
+  coord_fixed() +
+  theme_light() +
+  labs( color =  "Conditions") +
+  scale_color_manual(values = c("#0d31b7", "#12550c", "#baea2f", "#E69F00" )) +
+  theme(
+    axis.title = element_text(size = 16),
+    legend.text = element_text(size = 13),
+    legend.title = element_text(size = 14, face = "bold"))
+PCA.all
+
+# save plot
+ggsave("PCA_Ribo_all.png", PCA.all, bg="transparent", width = 10)
+
+```
+
+```{r, count plots}
+# counts or p-sites of specific genes 
+
+# EWSR1 (remove cell_line if only 1 is studied)
+ENSG00000182944 <- plotCounts(dds_RNA, gene = "ENSG00000182944", intgroup = c("conditions", "cell_line"), returnData = TRUE) 
+ENSG00000182944 <- plotCounts(dds_ribo, gene = "ENSG00000182944", intgroup = c("conditions", "cell_line"), returnData = TRUE) 
+
+# FLI1 (remove cell_line if only 1 is studied)
+ENSG00000151702 <- plotCounts(dds_RNA, gene = "ENSG00000151702", intgroup = c("conditions", "cell_line"), returnData = TRUE) 
+ENSG00000151702 <- plotCounts(dds_ribo, gene = "ENSG00000151702", intgroup = c("conditions", "cell_line"), returnData = TRUE) 
+
+# plot countsplot (change gene_ensemble)
+ENSG00000182944 <- ggplot(ENSG00000182944, aes(x=conditions, y=count, color = conditions)) + 
+  geom_point(position=position_jitter(w=0.2, h=0)) + 
+  theme_linedraw() + 
+  labs(y ="Counts", x = " ", color = "Conditions") +
+  facet_wrap(~cell_line, scales = "free_y") + # remove if only 1 is studied
+  theme(
+    strip.text = element_text(size = 12, face = "bold"),
+    legend.justification = c("right", "bottom"),
+    legend.position = c(0.9, 0.1),
+    axis.text.x = element_text(angle = 60)
+  ) +
+  stat_compare_means(
+    method = "t.test", 
+    label = "p.format", 
+    size = 4, 
+    hjust = -0.2, 
+    vjust = 2) +
+  scale_color_manual(values = c("DOXneg" =  "#56B4E9", "DOXpos" = "#E69F00"))
+
+ENSG00000182944
+
+# save plot
+ggsave("ENSG00000251460_counts.png", ENSG00000251460) 
+
+```
+
+```{r sample to sample heatmap}
+# distance between samples (using corresponding vsd)
+sampleDists <- dist(t(assay(vsd)))
+sampleDistMatrix <- as.matrix(sampleDists)
+rownames(sampleDistMatrix) <- paste(vsd$conditions)
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues"))) (255)
+pheatmap(sampleDistMatrix, clustering_distance_cols = sampleDists, clustering_distance_rows = sampleDists, col=colors)
+```
+
+```{r, ComplexHeatmap}
+# normalize & transform counts into Z-scores
+normalized_counts <- counts(dds_RNA, normalized = TRUE)
+hm <- t(scale(t(normalized_counts)))
+
+# normalize & transform p-sites into Z-scores
+normalized_psites <- counts(dds_ribo, normalized = TRUE)
+hm <- t(scale(t(normalized_psites)))
+
+# reorder the results obtained earlier (change results df) 
+res <- res_RNA[order(res_RNA$pvalue),]
+
+# select top 1000
+hm <- hm[which(rownames(hm) %in% rownames(res) [1:500]),]
+hm_genes <- rownames(hm)
+
+# create colors
+conditions_cols <- c("#0d31b7", "#E69F00")
+class_cols <- c("#009E73", "#E69D70", "#56B4E9") 
+cell_line_cols <- c("#c8e140", "#34b36c",  "#5e63bf", "#ae61a5", "#900C3F")
+
+# create row annotations
+class_df <- data.frame(geneID = hm_genes,
+                       class = res$class[rownames(res) %in% hm_genes]) 
+annot_row <- data.frame(class = class_df[match((hm_genes), class_df[, "geneID"]),]$class)
+rownames(annot_row) <- topgenes$geneID
+annot_row$class <-
+  factor(annot_row$class,
+         levels = c("lncRNA", "unannotated", "protein_coding"))
+row_cols <-
+  list(class = setNames(class_cols,
+                        levels(annot_row$class)))
+ha_row <- HeatmapAnnotation(df = annot_row, show_annotation_name = F, which = "row", col = row_cols)
+
+# create column annotations
+annot_col <- coldata_all_sh
+annot_col$conditions <- as.factor(coldata_all_sh$conditions)
+annot_col$cell_line <- as.factor(coldata_all_sh$cell_line)
+anno_cols <- list(cell_line = setNames(cell_line_cols,
+                               levels(annot_col$cell_line)),
+                  conditions = setNames(conditions_cols,
+                                       levels(annot_col$conditions)))
+ha <- HeatmapAnnotation(df = annot_col, which = "column", col = anno_cols, simple_anno_size = unit(0.3, "cm")) 
+
+# create colors
+my_col <- viridis::magma(100)
+breaks <- seq(-1.5,2 , length.out = 100)
+
+# create heatmap
+heatmap <- ComplexHeatmap::Heatmap(
+  hm,
+  show_row_dend = FALSE,
+  show_column_dend = FALSE,
+  cluster_columns = TRUE,
+  cluster_rows = TRUE,
+  top_annotation = ha,
+  left_annotation = ha_row,
+  column_title = " ",
+  column_title_gp = gpar(fontsize = 12, fontface = "bold"),
+  column_split = annot_col$cell_line,  
+  row_split = annot_row$class,  
+  col = circlize::colorRamp2(breaks, my_col),
+  heatmap_legend_param = list(
+    legend_direction = "horizontal",
+    title_position = "topcenter",
+    legend_width = unit(8, "line"),
+    title = "Gene Z-scores"
+  ),
+  column_gap = unit(1, "mm"),
+  show_column_names = FALSE,
+  show_row_names = FALSE)
+
+# draw heatmap
+heatmap <- ComplexHeatmap::draw(
+  heatmap,
+  heatmap_legend_side = "bottom",
+  annotation_legend_side = "right",
+  legend_grouping = "original",
+  background = "transparent")
+
+# save heatmap
+save(heatmap, file = "heatmap_celllines.png")
+```
+
+```{r, Figure 2A}
+# Make volcanoplot of all Differentially Expressed Genes (DEGs) using combined results df
+
+# label FEZF1 known target gene of EWSR1-FLI1
+res_RNA_all <- res_RNA_all %>%
+  mutate(label = ifelse(gene_id == "ENSG00000128610", "FEZF1", NA)) %>%
+  filter(!is.na(padj))
+
+# create background lines
+hline_data <- data.frame(
+  cell_line = c(rep("A673",2), rep( "SK-N-MC", 3), rep("MHH-ES1",3), rep("TC106", 2), rep("RD-ES", 3)),  
+  yintercept = c(100, 200, 50, 100, 150, 100, 200, 300, 100, 200, 100, 200, 300))
+
+# calculate counts per cell_line, including total and downregulated genes
+counts <- res_RNA_all %>%
+  group_by(cell_line) %>%
+  summarise(
+    total_points = n(),  
+    downregulated = sum(padj < 0.05 & log2FoldChange < -1))
+
+# merge counts to results df
+res_RNA_all <- left_join(res_RNA_all, counts, by = "cell_line")
+
+# plot ggplot (change results df for Ribo-seq analyses)
+ggplot(data=res_RNA_all, aes(x=log2FoldChange, y=-log10(padj), color = class)) + 
+  geom_rect(aes(xmin = -Inf, xmax = -1, ymin = -log10(0.05), ymax = Inf), 
+            fill = "#e7f3fc", alpha = 0.2, color = NA) +
+  facet_wrap(~cell_line, nrow = 2, scales = "free") +
+    theme_minimal() + 
+    geom_vline(xintercept=c(-1, 1), col="black", alpha=0.7, linetype ="dashed") +
+    geom_hline(yintercept=-log10(0.05), col="black", alpha=0.7, linetype ="dashed") +
+  geom_hline(data = hline_data, aes(yintercept = yintercept), color = "black", size = 0.5, alpha = 0.2, linetype = "dotted") +
+  geom_point() + 
+  labs(color = "Gene Class ", size = 0.5, x= "log2FoldChange(DOX+ vs DOX-)") + 
+  scale_color_manual(values = c("lncRNA" = "#009E73", "protein_coding" = "#56B4E9", "unannotated"="#E69D70", "pseudogene" = "#e1de22", "misc_RNA" = "#917", "small_RNA" = "#910")) +
+  theme_linedraw() + 
+  theme(
+    panel.grid.major = element_blank(),  
+    panel.grid.minor = element_blank(),  
+    panel.background = element_rect(fill = 'transparent'), 
+    plot.background = element_rect(fill = 'transparent', color = NA), 
+    legend.background = element_rect(fill = 'transparent'), 
+    legend.box.background = element_rect(fill = 'transparent'), 
+    legend.position = "right",  
+    legend.justification = c("right", "bottom"),
+    legend.box.just = "right",
+    legend.margin = margin(2,2,2,2),
+    legend.text = element_text(size = 12),
+    legend.title = element_text(size = 14),
+    strip.text = element_text(size = 14, face = "bold"),
+  )  
+
+Volcano_RNA_all
+ggsave('Volcano_RNA_all.png', Volcano_RNA_all, bg='transparent', width = 12)
+```
+
+```{r, Figure 2 B}
+# Barplot of fusion driven genes present in number of cell lines
+
+# identify fusion-driven genes
+SKNMC_fd <- rownames(res_RNA_SKNMC %>% filter(log2FoldChange < -1, padj < 0.05))
+MHHES1_fd <- rownames(res_RNA_MHH %>% filter(log2FoldChange < -1, padj < 0.05))
+TC106_fd <- rownames(res_RNA_TC %>% filter(log2FoldChange < -1, padj < 0.05))
+RDES_fd <- rownames(res_RNA_RDES %>% filter(log2FoldChange < -1, padj < 0.05))
+A673_fd <- rownames(res_RNA_A673 %>% filter(log2FoldChange < -1, padj < 0.05))
+
+fusiondriven_genes <- unique(c(SKNMC_fd, A673_fd, MHHES1_fd, TC106_fd, RDES_fd))
+
+EwS_CL_plot <- data.frame(row.names =  fusiondriven_genes,
+                          A673 = ifelse(fusiondriven_genes %in% A673_fd, 1, 0),
+                          SKNMC = ifelse(fusiondriven_genes %in% SKNMC_fd, 1, 0),
+                          MHHES1 = ifelse(fusiondriven_genes %in% MHHES1_fd, 1, 0),
+                          TC106 = ifelse(fusiondriven_genes %in% TC106_fd, 1, 0), 
+                          RDES = ifelse(fusiondriven_genes %in% RDES_fd, 1, 0))
+                          
+EwS_CL_df <- EwS_CL_plot %>%
+  mutate(sum = rowSums(EwS_CL_plot),
+         gene_id = rownames(EwS_CL_plot))
+
+EwS_CL_df <- EwS_CL_df %>%
+  left_join(gene_info, by = join_by(gene_id)) %>%
+  mutate(class = ifelse(is.na(class), "unannotated", class)) %>%
+  select(A673, SKNMC, MHHES1, TC106, RDES, sum, class) 
+
+total_counts <- EwS_CL %>%
+  group_by(sum) %>%
+  summarise(total = n())
+
+# Plotting the data with ggplot
+  p <- ggplot(EwS_CL, aes(x = sum, fill = factor(class))) +
+  geom_bar() +
+  theme_classic() +
+  scale_fill_manual(values = c("lncRNA" = "#009E73", "protein_coding" = "#56B4E9", 
+                               "unannotated"="#E69D70", "pseudogene" = "#e1de22", 
+                               "misc_RNA" = "#917",
+                               "small_RNA" = "#910")) + 
+  labs(y = "Number of fusion-driven genes",
+       x = "Number of cell lines",
+       fill = "Gene types") +
+  scale_x_reverse(breaks = c(5, 4, 3, 2, 1)) +
+  theme(axis.title = element_text(size = 24, face = "bold"),
+        axis.text.x = element_text(size = 18),
+        axis.text.y = element_text(size = 14),
+        legend.position = "right")
+        
+p
+ggsave("fusionenriched_Allgenes_sized.png", p, bg = "transparent", width = 10)
+```
+
+```{r, Figure 2C}
+# Identifing overlap between fusion-driven genes in EWS cell lines
+
+# create list for Venn diagram
+fusiondriven <- list(SKNMC= SKNMC_enriched, MHHES1=MHHES1_enriched, TC106= TC106_enriched, RDES= RDES_enriched, A673= A673_enriched)
+
+# plot venn diagram
+venn <- ggVennDiagram(
+  fusiondriven, label_alpha = 0,
+  set_color = c("#c1ba1d", "#34b36c",  "#5e63bf", "#c235b6", "#900C3F"),
+  label = "count",
+  category.names = c(" ", "MHH-ES1", "TC106", "RD-ES", "A673"),
+  set_size = 5,
+  edge_size = 1.6) +
+  scale_fill_gradient(low="grey90",high = "#f93e3e") + 
+  labs(fill = "Gene count") +
+  theme(legend.title = element_text(size = 16, face = "bold"),
+        legend.position = "right")
+venn
+
+# save venn diagram
+ggsave("Venn_knockdownenriched.png", venn, bg = "transparent")
+```
+
+```{r, Figure 2D}
+# Perform Gene Set Enrichment Analyses 
+# prepare input (change results df)
+original_gene_list <- res_RNA$log2FoldChange
+
+# name the vector
+names(original_gene_list) <- as.data.frame(res_RNA) %>% rownames(.)
+res_RNA$gene_id <- rownames(res_RNA)
+# omit any NA values 
+gene_list<-na.omit(original_gene_list)
+
+# sort the list in decreasing order
+gene_list <- sort(gene_list, decreasing = TRUE)
+
+# create gse
+gse <- gseGO(geneList=gene_list, 
+             ont ="ALL", 
+             keyType = "ENSEMBL",
+             minGSSize = 20, 
+             maxGSSize = 800, 
+             pvalueCutoff = 0.05, 
+             verbose = TRUE, 
+             OrgDb = org.Hs.eg.db, 
+             pAdjustMethod = "none",
+             eps = 0)
+
+# analyze enrichment scores by hand
+View(as.data.frame(gse))
+
+# 4 descriptions were chosen and plotted as gseaplots 
+ecm <- gseaplot2(gse,
+                 title = gse$Description[2], 
+                 geneSetID = 2,
+                 base_size = 18,
+                 rel_heights = c(1.5,0.5,0.7)) 
+etm <- gseaplot2(gse, 
+                 title = gse$Description[101], 
+                 geneSetID = 101, 
+                 base_size = 18, 
+                 rel_heights = c(1.5,0.5,0.7))
+chr <- gseaplot2(gse, 
+                 title = gse$Description[912], 
+                 geneSetID = 912, 
+                 base_size = 18, 
+                 rel_heights = c(1.5,0.5, 0.7))
+cellcycle <- gseaplot2(gse, 
+                       title = gse$Description[1003], 
+                       geneSetID = 1003, 
+                       base_size = 18, 
+                       rel_heights = c(1.5,0.5,0.7))
+
+# save gseaplots
+ggsave("ecm_gseplot.png", ecm)
+ggsave("etm_gseplot.png", etm)
+ggsave("cycle_gseplot.png", cellcycle)
+ggsave("chr_gseplot.png", chr)
+```

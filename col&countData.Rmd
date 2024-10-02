@@ -1,0 +1,250 @@
+---
+title: "ColData & countData for RNA-seq & Ribo-seq analyses"
+output: html_document
+date: "2024-07-01"
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(tidyverse)
+```
+
+```{r, load in data}
+# RNA-seq data: txi containing counts, length & abundance
+pathtodir <- "txi_celllines.RDS"
+txi <- readRDS(pathtodir)
+
+# Ribo-seq data: 
+  # p-sites
+pathtodir <- "EWS_cl_orf_quant_psites.txt"
+psites <- read.table(pathtodir)
+colnames(psites) <- c(264:269, 271:283, 526:549)
+
+  # p-sites per million
+pathtodir <- "EWS_cl_orf_quant_psites_permillion.txt"
+ppm <- read.table(pathtodir)
+colnames(ppm) <- c(264:269, 271:283, 526:549)
+
+  # ORF info
+pathtodir <- "ews_harmonised_ORF_table.csv"
+ORFs <- as.data.frame(read.table(pathtodir, header = TRUE, comment.char = "#", sep = ","))
+psite_to_gene <- select(ORFs, gene_id, orf_id)
+```
+
+
+```{r RNA all shorthairpinRNA}
+# load in coldata for all cell lines:
+coldata_all_sh <- data.frame(sample = c(264:269,271, 273, 526:549), conditions = as.factor(c(rep("DOXneg", 5), rep("DOXpos", 3), rep("DOXpos", 3), rep("DOXneg", 3), rep("DOXpos", 3), rep("DOXneg", 3), rep("DOXpos", 3), rep("DOXneg", 3), rep("DOXpos", 3), rep("DOXneg", 3))), cell_line = as.factor(c(rep("A673", 8), rep("SK-N-MC", 6), rep("MHH-ES1", 6), rep("TC-106", 6), rep("RD-ES", 6))))
+coldata_all_sh <- coldata_all_sh %>%
+  column_to_rownames("sample") 
+
+txi_all_sh <- list(abundance = txi$abundance[,c(1:9, 19:42)], 
+                  counts = txi$counts[,c(1:9, 19:42)],
+                  length = txi$length[,c(1:9, 19:42)],
+                  countsFromAbundance = txi$countsFromAbundance)
+```
+
+```{r, RNA all samples}
+# coldata
+coldata_all <- data.frame(sample = c(264:271, 273:279, 281:283, 526:549), conditions = as.factor(c(rep("DOXneg", 5), rep("DOXpos", 4), rep("DOXneg", 5), rep("DOXneg", 4), rep("DOXpos", 3), rep("DOXneg", 3), rep("DOXpos", 3), rep("DOXneg", 3), rep("DOXpos", 3), rep("DOXneg", 3), rep("DOXpos", 3), rep("DOXneg", 3))), cell_line = as.factor(c(rep("A673", 18), rep("SK-N-MC", 6), rep("MHH-ES1", 6), rep("TC-106", 6), rep("RD-ES", 6))))
+coldata_all <- coldata_all %>%
+  column_to_rownames("sample") 
+
+# count data
+txi_all <- list(abundance = txi$abundance[,c(1:9, 19:42)], 
+                  counts = txi$counts[,c(1:9, 19:42)],
+                  length = txi$length[,c(1:9, 19:42)],
+                  countsFromAbundance = txi$countsFromAbundance)
+```
+
+
+```{r RNA A673}
+# coldata  
+coldata_A673 <- data.frame(sample = c(264:269, 271:273), conditions = as.factor(c(rep("DOXneg", 5), rep("DOXpos", 4))))
+coldata_A673 <- data.frame(sample = c(264:271, 273:279, 281:283), conditions = as.factor(c(rep("EFDOXneg", 5), rep("EFDOXpos", 4), rep("CtrlDOXneg", 5), rep("CtrlDOXpos", 4))))
+coldata_A673 <- coldata_A673 %>%
+  column_to_rownames("sample")
+
+# countdata 
+  # use the seperate data set:
+count <- read.table("~/surfdrive - Lotta Smit@surfdrive.surf.nl/R/Ewing Data/EwS_celllines_RNA_tumor_gtf.geneCounts.txt", header = TRUE,comment.char = "#")
+count <- count %>%
+  select(c("Geneid", starts_with("X.hpc"))) %>%
+  column_to_rownames("Geneid")
+count <-count[,c(3, 12, 15, 24, 27, 33, 34, 47, 60, 73, 95, 98, 111, 125, 128, 146, 153, 155)]
+colnames(count) <- c(276, 271, 281, 268, 274, 282, 277, 275, 269, 270, 266, 283, 264, 267, 278, 273, 279, 265)
+count <- count %>%
+ select(c("264", "265", "266", "267", "268", "269", "270", "271", "273", "274", "275", "276", "277", "278", "279", "281", "282", "283"))
+count <- count[,1:9]
+
+  # use txi
+txi_A673 <- list(abundance = txi$abundance[,1:9], 
+                  counts = txi$counts[,1:9],
+                  length = txi$length[,1:9],
+                  countsFromAbundance = txi$countsFromAbundance)
+```
+
+```{r, RNA SKNMC}
+# coldata for SK-N-MC
+coldata_SKNMC <- data.frame(sample = c(526:531), conditions = as.factor(c(rep("DOXpos", 3), rep("DOXneg", 3))))
+coldata_SKNMC <- coldata_SKNMC %>%
+  column_to_rownames("sample") 
+
+# txi count
+txi_SKNMC <- list(abundance = txi$abundance[,19:24], 
+                  counts = txi$counts[,19:24],
+                  length = txi$length[,19:24],
+                  countsFromAbundance = txi$countsFromAbundance)
+
+```
+
+```{r, RNA MHH-ES1}
+# coldata 
+coldata_MHHES1 <- data.frame(sample = c(532:537), conditions = as.factor(c(rep("DOXpos", 3), rep("DOXneg", 3))))
+coldata_MHHES1 <- coldata_MHHES1 %>%
+  column_to_rownames("sample") 
+
+# countdata
+txi_MHHES1 <- list(abundance = txi$abundance[,25:30], 
+                  counts = txi$counts[,25:30],
+                  length = txi$length[,25:30],
+                  countsFromAbundance = txi$countsFromAbundance)
+```
+
+```{r, RNA TC106}
+# coldata 
+coldata_TC106 <- data.frame(sample = c(538:543), conditions = as.factor(c(rep("DOXpos", 3), rep("DOXneg", 3))))
+coldata_TC106 <- coldata_TC106 %>%
+  column_to_rownames("sample")
+
+# countdata
+txi_TC106 <- list(abundance = txi$abundance[,31:36], 
+                  counts = txi$counts[,31:36],
+                  length = txi$length[,31:36],
+                  countsFromAbundance = txi$countsFromAbundance)
+```
+
+```{r, RNA RD-ES}
+# coldata 
+coldata_RDES <- data.frame(sample = c(544:549), conditions = as.factor(c(rep("DOXpos", 3), rep("DOXneg", 3))))
+coldata_RDES <- coldata_RDES %>%
+  column_to_rownames("sample") 
+
+# countdata 
+txi_RDES <- list(abundance = txi$abundance[,37:42], 
+                  counts = txi$counts[,37:42],
+                  length = txi$length[,37:42],
+                  countsFromAbundance = txi$countsFromAbundance)
+```
+
+
+```{r, Ribo all sh samples}
+# new coldata, since one sample was excluded:
+coldata_all_shRibo<- data.frame(sample = c(264:269,271, 273, 526:549), conditions = as.factor(c(rep("DOXneg", 5), rep("DOXpos", 3), rep("DOXpos", 3), rep("DOXneg", 3), rep("DOXpos", 3), rep("DOXneg", 3), rep("DOXpos", 3), rep("DOXneg", 3), rep("DOXpos", 3), rep("DOXneg", 3))), cell_line = as.factor(c(rep("A673", 8), rep("SK-N-MC", 6), rep("MHH-ES1", 6), rep("TC-106", 6), rep("RD-ES", 6))))
+coldata_all_shRibo <- coldata_all_shRibo %>%
+  column_to_rownames("sample") 
+
+# ORF p-sites filtered
+psites_sh <- psites[,c(1:7, 9, 20:43)]
+ppm_sh<- as.data.frame(ppm[,c(1:7,9, 20:43)])
+psites_sh <- psites_sh[rowSums(ppm_sh >= 1) >= 3,]
+psites_sh$orf_id <- rownames(psites_sh)
+
+# merged p-sites filtered
+mergingpsites <- merge(psites_sh, psite_to_gene, by = "orf_id", all.x = TRUE)
+mergingpsites$orf_id <- NULL
+merged_psites_sh <- mergingpsites %>%
+  group_by(gene_id) %>%
+  summarise(across(c(1:32), sum)) %>%
+  column_to_rownames("gene_id")
+```
+
+``` {r, Ribo A673}
+# new coldata, since one sample was excluded:
+coldata_ARibo<- data.frame(sample = c(264:269,271, 273), conditions = c(rep("DOXneg", 5), rep("DOXpos", 3)))
+coldata_ARibo <- coldata_ARibo %>%
+  column_to_rownames("sample") 
+coldata_ARibo$conditions <- as.factor(coldata_ARibo$conditions)
+
+# ORF psites filtered
+psitesA <- psites[,c(1:7, 9:19)]
+ppmA<- as.data.frame(ppm[,c(1:7,9:19)])
+psitesA <- psitesA[rowSums(ppmA >= 1) >= 3,]
+psitesA$orf_id <- rownames(psitesA)
+
+# merged p-sites filtered
+mergingpsites <- merge(psitesA, psite_to_gene, by = "orf_id", all.x = TRUE)
+mergingpsites$orf_id <- NULL
+merged_psites_A <- mergingpsites %>%
+  group_by(gene_id) %>%
+  summarise(across(c(1:18), sum)) %>%
+  column_to_rownames("gene_id")
+```
+
+```{r, ribo  SKNMC}
+# ORF psites filtered
+psitesS <- psites[,c(20:25)]
+ppmS <- as.data.frame(ppm[,c(20:25)])
+psitesS <- psitesS[rowSums(ppmS >= 1) >= 2,]
+
+# merged p-sites filtered
+psitesS$orf_id <- rownames(psitesS)
+mergingpsites <- merge(psitesS, psite_to_gene, by = "orf_id", all.x = TRUE)
+mergingpsites$orf_id <- NULL
+merged_psites_S <- mergingpsites %>%
+  group_by(gene_id) %>%
+  summarise(across(c(1:6), sum)) %>%
+  column_to_rownames("gene_id")
+```
+
+``` {r, Ribo MHHES1}
+# ORF psites filtered
+psitesM <- psites[,c(26:31)]
+ppmM <- as.data.frame(ppm[,c(26:31)])
+psitesM <- psitesM[rowSums(ppmM >= 1) >= 2,]
+
+# merged p-sites filtered
+psitesM$orf_id <- rownames(psitesM)
+mergingpsites <- merge(psitesM, psite_to_gene, by = "orf_id", all.x = TRUE)
+mergingpsites$orf_id <- NULL
+merged_psites_M <- mergingpsites %>%
+  group_by(gene_id) %>%
+  summarise(across(c(1:6), sum)) %>%
+  column_to_rownames("gene_id")
+```
+
+``` {r, Ribo TC106}
+# ORF psites filtered
+psitesT <- psites[,c(32:37)]
+ppmT<- as.data.frame(ppm[,c(32:37)])
+psitesT <- psitesT[rowSums(ppmT >= 1) >= 2,]
+
+# merged p-sites filtered
+psitesT$orf_id <- rownames(psitesT)
+mergingpsites <- merge(psitesT, psite_to_gene, by = "orf_id", all.x = TRUE)
+mergingpsites$orf_id <- NULL
+merged_psites_T <- mergingpsites %>%
+  group_by(gene_id) %>%
+  summarise(across(c(1:6), sum)) %>%
+  column_to_rownames("gene_id")
+```
+
+``` {r, Ribo RDES}
+# ORF psites filtered
+psitesR <- psites[,c(38:43)]
+ppmR<- as.data.frame(ppm[,c(38:43)])
+psitesR <- psitesRD[rowSums(ppmR >= 1) >= 2,]
+
+# merged p-sites filtered
+psitesR$orf_id <- rownames(psitesR)
+mergingpsites <- merge(psitesR, psite_to_gene, by = "orf_id", all.x = TRUE)
+mergingpsites$orf_id <- NULL
+merged_psites_R <- mergingpsites %>%
+  filter(!is.na(gene_id)) %>%
+  group_by(gene_id) %>%
+  summarise(across(c(1:6), sum)) %>% 
+    column_to_rownames("gene_id")
+```
+
+
+
