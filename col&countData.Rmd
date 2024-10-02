@@ -147,7 +147,7 @@ coldata_all_shRibo <- coldata_all_shRibo %>%
 # ORF p-sites filtered
 psites_sh <- psites[,c(1:7, 9, 20:43)]
 ppm_sh<- as.data.frame(ppm[,c(1:7,9, 20:43)])
-psites_sh <- psites_sh[rowSums(ppm_sh >= 1) >= 3,]
+psites_sh <- psites_sh[rowSums(ppm_sh >= 1) >= 2,]
 psites_sh$orf_id <- rownames(psites_sh)
 
 # merged p-sites filtered
